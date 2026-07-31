@@ -1,0 +1,734 @@
+<template>
+  <div class="settings-page" v-loading="loading">
+    <div class="home-header">
+      <div>
+        <h1 class="page-title">应用设置</h1>
+        <p class="text-muted text-sm">配置全局外观、AI 模型与 API 密钥</p>
+      </div>
+      <el-button :icon="ArrowLeft" @click="$router.push('/')">返回首页</el-button>
+    </div>
+
+    <el-form :model="form" label-width="110px" class="settings-form">
+      <div class="card section-card">
+        <div class="section-title">外观</div>
+
+        <el-form-item label="主题">
+          <el-radio-group v-model="form.themeMode" @change="onThemeChange">
+            <el-radio-button label="light">
+              <el-icon><Sunny /></el-icon>
+              <span style="margin-left: 4px">浅色</span>
+            </el-radio-button>
+            <el-radio-button label="dark">
+              <el-icon><Moon /></el-icon>
+              <span style="margin-left: 4px">深色</span>
+            </el-radio-button>
+            <el-radio-button label="auto">
+              <el-icon><Monitor /></el-icon>
+              <span style="margin-left: 4px">跟随系统</span>
+            </el-radio-button>
+          </el-radio-group>
+          <span class="text-faint text-xs" style="margin-left: 12px">
+            切换立即生效，无需重启
+          </span>
+        </el-form-item>
+
+        <el-form-item label="字体大小">
+          <div class="slider-row">
+            <el-slider v-model="form.fontSize" :min="12" :max="20" :step="1" style="flex: 1" @input="onFontChange" />
+            <span class="slider-val">{{ form.fontSize }}px</span>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="编辑器字体">
+          <el-select v-model="form.editorFont" style="width: 100%" @change="onFontChange">
+            <el-option label="思源宋体" value="思源宋体" />
+            <el-option label="思源黑体" value="思源黑体" />
+            <el-option label="微软雅黑" value="微软雅黑" />
+            <el-option label="宋体" value="宋体" />
+            <el-option label="楷体" value="楷体" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="界面缩放">
+          <div class="slider-row">
+            <el-slider v-model="form.zoomLevel" :min="70" :max="150" :step="5" style="flex: 1" @input="onZoomChange" />
+            <span class="slider-val">{{ form.zoomLevel }}%</span>
+          </div>
+          <span class="text-faint text-xs" style="display:block; margin-top:2px">
+            像浏览器一样整体缩放界面（70%-150%），切换立即生效
+          </span>
+        </el-form-item>
+      </div>
+
+      <div class="card section-card">
+        <div class="section-title-row">
+          <div class="section-title">API 配置</div>
+          <div class="add-provider-group">
+            <el-dropdown trigger="click" @command="quickAddProvider" placement="bottom-end">
+              <el-button size="small" type="primary" :icon="Plus">
+                快速添加<el-icon class="el-icon--right"><ArrowDown /></el-icon>
+              </el-button>
+              <template #dropdown>
+                <el-dropdown-menu>
+                  <el-dropdown-item command="openai">
+                    <div class="quick-item">
+                      <div class="quick-name">OpenAI</div>
+                      <div class="quick-desc text-faint text-xs">GPT-5.5 / GPT-5.4 系列</div>
+                    </div>
+                  </el-dropdown-item>
+                  <el-dropdown-item command="deepseek">
+                    <div class="quick-item">
+                      <div class="quick-name">DeepSeek</div>
+                      <div class="quick-desc text-faint text-xs">DeepSeek-V4-Pro / V4-Flash</div>
+                    </div>
+                  </el-dropdown-item>
+                  <el-dropdown-item command="zhipu">
+                    <div class="quick-item">
+                      <div class="quick-name">智谱 AI</div>
+                      <div class="quick-desc text-faint text-xs">GLM-5.2 系列（1M 上下文）</div>
+                    </div>
+                  </el-dropdown-item>
+                  <el-dropdown-item command="minimax">
+                    <div class="quick-item">
+                      <div class="quick-name">MiniMax</div>
+                      <div class="quick-desc text-faint text-xs">MiniMax-M3 / M2.7 系列</div>
+                    </div>
+                  </el-dropdown-item>
+                  <el-dropdown-item command="custom" divided>
+                    <div class="quick-item">
+                      <div class="quick-name">自定义 Provider</div>
+                      <div class="quick-desc text-faint text-xs">手动填写所有信息</div>
+                    </div>
+                  </el-dropdown-item>
+                </el-dropdown-menu>
+              </template>
+            </el-dropdown>
+          </div>
+        </div>
+        <div class="text-faint text-xs" style="margin-bottom: 12px">
+          模型只能通过下方 API 配置管理。第一个配置了 API Key 的 Provider 将作为默认使用。
+        </div>
+
+        <div v-for="(p, idx) in form.apiKeys" :key="idx" class="provider-card">
+          <div class="provider-header">
+            <el-input v-model="p.provider" size="small" style="width: 180px" placeholder="Provider 名称" />
+            <el-tag size="small" effect="plain">{{ p.models.length }} 个模型</el-tag>
+            <div class="provider-actions">
+              <el-button
+                size="small"
+                :icon="Connection"
+                :loading="testingIdx === idx"
+                @click="testConnection(idx)"
+              >测试连通性</el-button>
+              <el-button size="small" type="danger" :icon="Delete" @click="removeProvider(idx)" />
+            </div>
+          </div>
+
+          <div v-if="testResults[idx]" class="test-result" :class="testResults[idx].ok ? 'ok' : 'fail'">
+            <el-icon><CircleCheck v-if="testResults[idx].ok" /><CircleClose v-else /></el-icon>
+            <span>{{ testResults[idx].msg }}</span>
+          </div>
+
+          <el-form-item label="BaseURL">
+            <el-input v-model="p.baseUrl" placeholder="API 地址，如 https://api.openai.com/v1" />
+          </el-form-item>
+
+          <el-form-item label="API Key">
+            <el-input
+              v-model="p.apiKey"
+              type="password"
+              show-password
+              placeholder="sk-..."
+            />
+          </el-form-item>
+
+          <el-form-item label="模型列表">
+            <div class="models-box">
+              <el-tag
+                v-for="(m, mi) in p.models"
+                :key="mi"
+                closable
+                :disable-transitions="false"
+                @close="removeModel(idx, mi)"
+                style="margin-right: 6px; margin-bottom: 6px"
+              >
+                {{ m }}
+              </el-tag>
+              <el-input
+                v-if="modelInputVisible[idx]"
+                ref="modelInputRefs"
+                v-model="modelInputValue[idx]"
+                size="small"
+                style="width: 200px"
+                placeholder="模型 ID"
+                @keyup.enter="addModel(idx)"
+                @blur="addModel(idx)"
+              />
+              <el-button v-else size="small" :icon="Plus" @click="showModelInput(idx)">
+                添加模型
+              </el-button>
+            </div>
+          </el-form-item>
+        </div>
+      </div>
+
+      <div class="card section-card">
+        <div class="section-title">联网搜索</div>
+
+        <el-form-item label="搜索引擎">
+          <el-radio-group v-model="form.searchProvider">
+            <el-radio-button label="duckduckgo">DuckDuckGo（免 Key）</el-radio-button>
+            <el-radio-button label="tavily">Tavily</el-radio-button>
+            <el-radio-button label="serper">Serper</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+
+        <el-form-item label="搜索 API Key">
+          <el-input
+            v-model="form.searchApiKey"
+            type="password"
+            show-password
+            placeholder="使用 DuckDuckGo 时可留空；Tavily/Serper 需填入对应 Key"
+          />
+          <div class="text-faint text-xs" style="margin-top: 4px">
+            Tavily：<a href="https://tavily.com" target="_blank">tavily.com</a>　
+            Serper：<a href="https://serper.dev" target="_blank">serper.dev</a>
+          </div>
+        </el-form-item>
+      </div>
+
+      <div class="card section-card">
+        <div class="section-title">数据</div>
+
+        <el-form-item label="自动保存间隔">
+          <el-input-number
+            v-model="form.autoSaveInterval"
+            :min="5"
+            :max="600"
+            :step="5"
+            style="width: 100%"
+          />
+          <span class="text-faint text-xs" style="margin-left: 8px">秒</span>
+        </el-form-item>
+
+        <el-form-item label="数据目录">
+          <el-input v-model="form.dataDir" readonly />
+        </el-form-item>
+      </div>
+
+      <div class="card section-card">
+        <div class="section-title">应用更新</div>
+
+        <el-form-item label="当前版本">
+          <el-tag size="small" effect="plain">v{{ currentVersion }}</el-tag>
+          <span v-if="lastCheckTime" class="text-faint text-xs" style="margin-left: 12px">
+            上次检查：{{ lastCheckTime }}
+          </span>
+        </el-form-item>
+
+        <el-form-item label="自动检查">
+          <el-switch v-model="form.autoUpdateCheck" />
+          <span class="text-faint text-xs" style="margin-left: 12px">
+            启动后 10 秒检查一次，之后每 30 分钟轮询一次
+          </span>
+        </el-form-item>
+
+        <el-form-item label="手动检查">
+          <div class="update-check-row">
+            <el-button type="primary" :loading="checking" :icon="Refresh" @click="checkNow">
+              立即检查更新
+            </el-button>
+            <el-button v-if="checkResult && !checking" :icon="Link" @click="openReleases" title="在浏览器中打开 Release 页面">
+              查看发布页
+            </el-button>
+            <span v-if="checkResult" class="text-faint text-xs" style="margin-left: 12px">
+              {{ checkResult }}
+            </span>
+          </div>
+        </el-form-item>
+      </div>
+
+      <div class="actions">
+        <el-button type="primary" :icon="Check" :loading="saving" @click="save">保存设置</el-button>
+      </div>
+    </el-form>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { ref, reactive, nextTick, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
+import {
+  ArrowLeft, ArrowDown, Check, Plus, Sunny, Moon, Refresh, Monitor, Link,
+  Connection, Delete, CircleCheck, CircleClose
+} from '@element-plus/icons-vue'
+import { useSettingsStore } from '@/stores/settings'
+import type { AppSettings } from '@/types'
+
+const router = useRouter()
+const settingsStore = useSettingsStore()
+
+const loading = ref(false)
+const saving = ref(false)
+
+const form = reactive<AppSettings>({
+  defaultModel: '',
+  defaultBaseUrl: '',
+  apiKeys: [],
+  theme: 'light',
+  themeMode: 'light',
+  fontSize: 14,
+  editorFont: '思源宋体',
+  autoSaveInterval: 30,
+  dataDir: '',
+  searchProvider: 'duckduckgo',
+  searchApiKey: '',
+  autoUpdateCheck: true,
+  lastCommitSha: '',
+  askMode: 'auto',
+  zoomLevel: 100
+})
+
+// 当前版本号 — 从 package.json 注入到 vite define 或回退到 1.0.0
+const currentVersion = (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_APP_VERSION) || '1.0.0'
+
+const checking = ref(false)
+const checkResult = ref('')
+const lastCheckTime = ref('')
+let lastReleaseUrl = ''
+
+async function checkNow() {
+  checking.value = true
+  checkResult.value = '正在检查...'
+  try {
+    const r = await window.api.updater.check()
+    lastCheckTime.value = new Date().toLocaleString('zh-CN', { hour12: false })
+    if (!r) {
+      checkResult.value = '检查失败：未收到响应'
+      ElMessage.error(checkResult.value)
+      return
+    }
+    // 网络错误（所有 GitHub 源都失败）
+    if (r.error) {
+      lastReleaseUrl = r.releaseUrl || 'https://github.com/3960922808-jpg/A-novel-writer/releases'
+      checkResult.value = `检查失败：${r.error}`
+      ElMessage.warning(checkResult.value + '，可点击"查看发布页"手动下载')
+      return
+    }
+    if (r.updated) {
+      // 发现新版本 — 通知已通过 onUpdateAvailable 推送，对话框会自动弹出
+      lastReleaseUrl = r.releaseUrl || ''
+      const name = (r.releaseName || r.version || '').split('\n')[0]
+      checkResult.value = `发现新版本：${r.version}（${name}）`
+      ElMessage.success('发现新版本，请查看更新提示')
+    } else if (r.hasRelease) {
+      // 已是最新
+      lastReleaseUrl = r.releaseUrl || ''
+      checkResult.value = `已是最新版本（${r.version}）`
+      ElMessage.success('当前已是最新版本')
+    } else {
+      checkResult.value = '暂无可用的发布版本'
+      ElMessage.info('暂无可用的发布版本')
+    }
+  } catch (e: any) {
+    checkResult.value = '检查失败：' + (e?.message || '未知错误')
+    ElMessage.error(checkResult.value)
+  } finally {
+    checking.value = false
+  }
+}
+
+function openReleases() {
+  const url = lastReleaseUrl || 'https://github.com/3960922808-jpg/A-novel-writer/releases'
+  window.open(url, '_blank')
+}
+
+const modelInputVisible = ref<Record<number, boolean>>({})
+const modelInputValue = ref<Record<number, string>>({})
+const modelInputRefs = ref<any[] | null>(null)
+
+// 测试连通性状态
+const testingIdx = ref<number | null>(null)
+const testResults = ref<Record<number, { ok: boolean; msg: string }>>({})
+
+// 大模型快速设置预设
+interface ProviderPreset {
+  key: string
+  label: string
+  provider: string
+  baseUrl: string
+  models: string[]
+  website: string
+}
+
+const PROVIDER_PRESETS: ProviderPreset[] = [
+  {
+    key: 'openai',
+    label: 'OpenAI',
+    provider: 'OpenAI',
+    baseUrl: 'https://api.openai.com/v1',
+    // 2026 年 GPT-5.5 / GPT-5.4 系列，已弃用 GPT-4o / GPT-3.5
+    models: ['gpt-5.5', 'gpt-5.5-pro', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.4-nano'],
+    website: 'https://platform.openai.com/api-keys'
+  },
+  {
+    key: 'deepseek',
+    label: 'DeepSeek',
+    provider: 'DeepSeek',
+    baseUrl: 'https://api.deepseek.com/v1',
+    // 2026 年 4 月发布 V4 系列（1M 上下文 + Thinking 模式），已弃用 deepseek-chat / deepseek-reasoner
+    models: ['deepseek-v4-pro', 'deepseek-v4-flash'],
+    website: 'https://platform.deepseek.com/api_keys'
+  },
+  {
+    key: 'zhipu',
+    label: '智谱 AI',
+    provider: '智谱AI',
+    // GLM-5.2（2026-06 发布，1M 上下文，MIT 开源），新域名 z.ai
+    baseUrl: 'https://api.z.ai/api/paas/v4',
+    models: ['glm-5.2', 'glm-5.2-air', 'glm-5.2-flash'],
+    website: 'https://z.ai/manage-apikey/apikey-list'
+  },
+  {
+    key: 'minimax',
+    label: 'MiniMax',
+    provider: 'MiniMax',
+    baseUrl: 'https://api.minimax.chat/v1',
+    // 2026 年 M3（06 月发布，1M 上下文）+ M2.7（03 月发布，200K 上下文）
+    models: ['MiniMax-M3', 'MiniMax-M2.7', 'MiniMax-M2.5'],
+    website: 'https://platform.minimaxi.com/user-center/basic-information/interface-key'
+  }
+]
+
+// 快速添加：根据预设填入 baseUrl/模型列表，apiKey 留空待用户填写
+function quickAddProvider(cmd: string) {
+  if (cmd === 'custom' || !cmd) {
+    addProvider()
+    return
+  }
+  const preset = PROVIDER_PRESETS.find(p => p.key === cmd)
+  if (!preset) {
+    addProvider()
+    return
+  }
+  // 已存在同名 provider 则提示
+  if (form.apiKeys.some(p => p.provider === preset.provider)) {
+    ElMessage.warning(`${preset.label} 已存在，请直接在下方填写 API Key`)
+    return
+  }
+  form.apiKeys.push({
+    provider: preset.provider,
+    baseUrl: preset.baseUrl,
+    apiKey: '',
+    models: [...preset.models]
+  })
+  ElMessage.success(`已添加 ${preset.label} 预设，请填写 API Key。申请地址：${preset.website}`)
+}
+
+// 添加自定义 Provider
+function addProvider() {
+  form.apiKeys.push({
+    provider: `自定义 ${form.apiKeys.length + 1}`,
+    baseUrl: '',
+    apiKey: '',
+    models: []
+  })
+  ElMessage.success('已添加自定义 Provider，请填写信息')
+}
+
+// 删除 Provider
+function removeProvider(idx: number) {
+  if (form.apiKeys.length <= 1) {
+    ElMessage.warning('至少保留一个 Provider')
+    return
+  }
+  form.apiKeys.splice(idx, 1)
+}
+
+// 测试 Provider 连通性
+async function testConnection(idx: number) {
+  const p = form.apiKeys[idx]
+  if (!p.baseUrl) {
+    ElMessage.warning('请先填写 BaseURL')
+    return
+  }
+  testingIdx.value = idx
+  try {
+    const url = p.baseUrl.replace(/\/+$/, '') + '/models'
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+    if (p.apiKey) headers['Authorization'] = `Bearer ${p.apiKey}`
+    const res = await fetch(url, { method: 'GET', headers })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      testResults.value[idx] = {
+        ok: false,
+        msg: `HTTP ${res.status} ${res.statusText}${text ? ' · ' + text.slice(0, 80) : ''}`
+      }
+      return
+    }
+    const data = await res.json()
+    const models: any[] = data?.data || data?.models || []
+    if (models.length > 0) {
+      // 自动填充模型列表
+      const ids: string[] = models.map((m: any) => m.id || m.name || m).filter(Boolean)
+      const newIds = ids.filter(id => !p.models.includes(id))
+      if (newIds.length > 0) p.models.push(...newIds)
+      testResults.value[idx] = {
+        ok: true,
+        msg: `连通成功 · 共 ${ids.length} 个模型${newIds.length > 0 ? ` · 已自动添加 ${newIds.length} 个新模型` : ''}`
+      }
+    } else {
+      testResults.value[idx] = { ok: true, msg: '连通成功（响应未返回模型列表，但 API 可用）' }
+    }
+  } catch (e: any) {
+    testResults.value[idx] = {
+      ok: false,
+      msg: '连接失败：' + (e?.message || '网络错误')
+    }
+  } finally {
+    testingIdx.value = null
+  }
+}
+
+onMounted(async () => {
+  if (settingsStore.settings) {
+    fillForm(settingsStore.settings)
+    return
+  }
+  loading.value = true
+  try {
+    await settingsStore.load()
+    if (settingsStore.settings) fillForm(settingsStore.settings)
+  } catch (e: any) {
+    ElMessage.error('加载设置失败：' + (e?.message || '未知错误'))
+  } finally {
+    loading.value = false
+  }
+})
+
+function fillForm(s: AppSettings) {
+  Object.assign(form, JSON.parse(JSON.stringify(s)))
+  if (!Array.isArray(form.apiKeys)) form.apiKeys = []
+  // 老数据兼容
+  if (!form.searchProvider) form.searchProvider = 'duckduckgo'
+  if (!form.searchApiKey) form.searchApiKey = ''
+  if (form.autoUpdateCheck === undefined || form.autoUpdateCheck === null) form.autoUpdateCheck = true
+  if (!form.lastCommitSha) form.lastCommitSha = ''
+  // themeMode 兼容：旧数据只有 theme，没有 themeMode
+  if (!form.themeMode) {
+    form.themeMode = form.theme === 'dark' ? 'dark' : 'light'
+  }
+  // askMode 兼容
+  if (!form.askMode) form.askMode = 'auto'
+  // zoomLevel 兼容
+  if (form.zoomLevel === undefined || form.zoomLevel === null) form.zoomLevel = 100
+}
+
+function onThemeChange() {
+  // 立即生效，无需点"保存设置"
+  settingsStore.update({ themeMode: form.themeMode })
+}
+
+function onFontChange() {
+  // 字体大小/编辑器字体实时预览
+  settingsStore.update({ fontSize: form.fontSize, editorFont: form.editorFont })
+}
+
+function onZoomChange() {
+  // 界面缩放实时生效（像浏览器一样）
+  settingsStore.update({ zoomLevel: form.zoomLevel })
+}
+
+function showModelInput(idx: number) {
+  modelInputVisible.value[idx] = true
+  modelInputValue.value[idx] = ''
+  nextTick(() => {
+    const arr = modelInputRefs.value
+    if (Array.isArray(arr) && arr.length) {
+      const el = arr[arr.length - 1]
+      el?.focus?.()
+    }
+  })
+}
+
+function addModel(idx: number) {
+  const v = (modelInputValue.value[idx] || '').trim()
+  if (v && !form.apiKeys[idx].models.includes(v)) {
+    form.apiKeys[idx].models.push(v)
+  }
+  modelInputVisible.value[idx] = false
+  modelInputValue.value[idx] = ''
+}
+
+function removeModel(idx: number, mi: number) {
+  form.apiKeys[idx].models.splice(mi, 1)
+}
+
+async function save() {
+  // 校验：至少配置一个 Provider 的 API Key
+  const hasKey = form.apiKeys.some(p => p.apiKey && p.apiKey.trim() && p.models.length > 0)
+  if (!hasKey) {
+    ElMessage.warning('请至少为某个 Provider 配置 API Key 与模型')
+    return
+  }
+  saving.value = true
+  try {
+    await settingsStore.update({
+      apiKeys: JSON.parse(JSON.stringify(form.apiKeys)),
+      theme: form.theme,
+      fontSize: form.fontSize,
+      editorFont: form.editorFont,
+      autoSaveInterval: form.autoSaveInterval,
+      dataDir: form.dataDir,
+      searchProvider: form.searchProvider,
+      searchApiKey: form.searchApiKey,
+      autoUpdateCheck: form.autoUpdateCheck,
+      zoomLevel: form.zoomLevel
+    })
+    ElMessage.success('已保存')
+  } catch (e: any) {
+    ElMessage.error('保存失败：' + (e?.message || '未知错误'))
+  } finally {
+    saving.value = false
+  }
+}
+</script>
+
+<style scoped>
+.settings-page {
+  height: 100vh;
+  overflow: auto;
+  padding: 28px 36px;
+}
+.home-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+.home-header p {
+  margin: 6px 0 0;
+  font-size: 13px;
+}
+.settings-form {
+  max-width: 820px;
+}
+.section-card {
+  padding: 20px 24px;
+  margin-bottom: 16px;
+}
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.slider-val {
+  width: 50px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2);
+  font-size: 13px;
+}
+.provider-card {
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+  background: var(--panel-2);
+}
+.provider-card:last-child {
+  margin-bottom: 0;
+}
+.provider-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.provider-header > .el-tag {
+  margin-right: auto;
+}
+.provider-actions {
+  display: flex;
+  gap: 6px;
+}
+.section-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.section-title-row > .section-title {
+  margin-bottom: 0;
+  padding-left: 0;
+  border-left: none;
+}
+/* 快速添加下拉项 */
+.quick-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+.quick-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.quick-desc {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.test-result {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.test-result.ok {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+.test-result.fail {
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.provider-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+.models-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  margin: 4px 0 24px;
+}
+.update-check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+</style>
